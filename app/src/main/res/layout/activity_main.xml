@@ -32,6 +32,13 @@
             android:layout_width="match_parent"
             android:layout_height="60dp"
             android:text="PROWADŹ DO AUTA"/>
+
+        <Button
+            android:id="@+id/btnSetTicket"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="⏰ PRZYPOMNIJ O BILECIE (TEST 1 MIN)"
+            android:layout_marginTop="16dp"/>
     </LinearLayout>
 
     <!-- EKRAN 2: ZAPISYWANIE POZYCJI -->

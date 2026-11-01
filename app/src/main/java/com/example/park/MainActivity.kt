@@ -1,8 +1,13 @@
 package com.example.park
 
 import android.Manifest
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -13,6 +18,7 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
@@ -31,6 +37,7 @@ import java.io.File
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var sharedPref: SharedPreferences
 
     private lateinit var layoutMenu: View
     private lateinit var layoutSave: View
@@ -39,6 +46,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var btnMenuSave: Button
     private lateinit var btnMenuNavigate: Button
+    private lateinit var btnSetTicket: Button // Nowy przycisk biletu
     private lateinit var btnBackFromSave: Button
     private lateinit var btnBackFromNavigate: Button
     private lateinit var btnTakePhoto: Button
@@ -54,7 +62,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var parkedLocation: Location? = null
     private var currentLocation: Location? = null
 
-    // Zmienne do obsługi zdjęcia w pełnej rozdzielczości HD
     private var photoUri: Uri? = null
     private var currentPhotoFile: File? = null
 
@@ -84,12 +91,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         else Toast.makeText(this, "Brak uprawnień do aparatu!", Toast.LENGTH_SHORT).show()
     }
 
-    // Nowy kontrakt na zapisywanie zdjęcia w pełnej rozdzielczości na dysku
+    // Nowe uprawnienia do powiadomień (Android 13+)
+    private val requestNotifPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) ustawAlarm(1) // Zmiana na 1 do testów
+        else Toast.makeText(this, "Brak zgody na powiadomienia!", Toast.LENGTH_SHORT).show()
+    }
+
     private val takePictureLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && currentPhotoFile != null) {
-            // Wczytujemy plik HD do widoków z pomniejszeniem do rozmiaru ekranu (żeby nie zabić pamięci RAM)
+            sharedPref.edit().putString("photoPath", currentPhotoFile!!.absolutePath).apply()
+
             val bitmap = wczytajZmniejszonyBitmap(currentPhotoFile!!.absolutePath, 800, 800)
             if (bitmap != null) {
                 ivParkedCar.setImageBitmap(bitmap)
@@ -103,6 +118,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        createNotificationChannel() // Tworzenie kanału systemowego na start
+        sharedPref = getSharedPreferences("SmartParkPrefs", Context.MODE_PRIVATE)
+
         layoutMenu = findViewById(R.id.layoutMenu)
         layoutSave = findViewById(R.id.layoutSave)
         layoutNavigate = findViewById(R.id.layoutNavigate)
@@ -110,6 +128,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnMenuSave = findViewById(R.id.btnMenuSave)
         btnMenuNavigate = findViewById(R.id.btnMenuNavigate)
+        btnSetTicket = findViewById(R.id.btnSetTicket) // Podpięcie przycisku biletu
         btnBackFromSave = findViewById(R.id.btnBackFromSave)
         btnBackFromNavigate = findViewById(R.id.btnBackFromNavigate)
         btnTakePhoto = findViewById(R.id.btnTakePhoto)
@@ -127,17 +146,28 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
+        wczytajZapisaneAuto()
+
         btnMenuSave.setOnClickListener {
+            sharedPref.edit().clear().apply()
+
             btnTakePhoto.visibility = View.GONE
             ivParkedCar.visibility = View.GONE
             ivParkedCar.setImageBitmap(null)
             currentPhotoFile = null
+            parkedLocation = null
 
             pokazEkran(layoutSave)
             sprawdzUprawnieniaIPobierz()
         }
 
         btnMenuNavigate.setOnClickListener { uruchomNawigacje() }
+
+        // Kliknięcie w bilet
+        btnSetTicket.setOnClickListener {
+            sprawdzUprawnieniaPowiadomienIUstaw()
+        }
+
         btnBackFromSave.setOnClickListener { pokazEkran(layoutMenu) }
         btnBackFromNavigate.setOnClickListener {
             zatrzymajNawigacje()
@@ -152,7 +182,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
         }
 
-        // Obsługa powiększania zdjęcia HD na pełen ekran
         val openFullscreenListener = View.OnClickListener {
             currentPhotoFile?.let { file ->
                 if (file.exists()) {
@@ -180,15 +209,83 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
+    // --- NOWE FUNKCJE DO POWIADOMIEŃ ---
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "parking_channel",
+                "Przypomnienia o bilecie",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun sprawdzUprawnieniaPowiadomienIUstaw() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                ustawAlarm(1) // Tu ustawiasz domyślny czas w minutach
+            } else {
+                requestNotifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else {
+            ustawAlarm(1)
+        }
+    }
+
+    private fun ustawAlarm(minuty: Int) {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(this, ParkingAlarmReceiver::class.java)
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Obliczamy czas odpalenia alarmu = Teraz + podane minuty
+        val triggerTime = System.currentTimeMillis() + (minuty * 60 * 1000)
+
+        try {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerTime,
+                pendingIntent
+            )
+            Toast.makeText(this, "Przypomnienie ustawione na $minuty min", Toast.LENGTH_SHORT).show()
+        } catch (e: SecurityException) {
+            // Zabezpieczenie awaryjne, jeśli system zablokuje dokładne alarmy
+            alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+            Toast.makeText(this, "Przypomnienie włączone ($minuty min)", Toast.LENGTH_SHORT).show()
+        }
+    }
+    // --- KONIEC FUNKCJI POWIADOMIEŃ ---
+
+    private fun wczytajZapisaneAuto() {
+        val savedLat = sharedPref.getString("lat", null)
+        val savedLon = sharedPref.getString("lon", null)
+        val savedPhotoPath = sharedPref.getString("photoPath", null)
+
+        if (savedLat != null && savedLon != null) {
+            parkedLocation = Location("").apply {
+                latitude = savedLat.toDouble()
+                longitude = savedLon.toDouble()
+            }
+            if (savedPhotoPath != null) {
+                val file = File(savedPhotoPath)
+                if (file.exists()) currentPhotoFile = file
+            }
+        }
+    }
+
     private fun uruchomAparat() {
-        // Tworzymy pusty plik tymczasowy na pełne zdjęcie HD
         currentPhotoFile = File.createTempFile("parked_car_", ".jpg", getExternalFilesDir("Pictures"))
         photoUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", currentPhotoFile!!)
-
         takePictureLauncher.launch(photoUri)
     }
 
-    // Pomocnicza funkcja optymalizująca wczytywanie dużych plików zdjęciowych
     private fun wczytajZmniejszonyBitmap(filePath: String, reqWidth: Int, reqHeight: Int): Bitmap? {
         return BitmapFactory.Options().run {
             inJustDecodeBounds = true
@@ -245,6 +342,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     val dokladnosc = location.accuracy
                     parkedLocation = location
 
+                    sharedPref.edit().apply {
+                        putString("lat", location.latitude.toString())
+                        putString("lon", location.longitude.toString())
+                        apply()
+                    }
+
                     if (dokladnosc > 20f) {
                         tvStatusSave.text = "📍 Zaparkowano (Słaby sygnał)\nBłąd pomiaru: ±${dokladnosc.toInt()} m"
                     } else {
@@ -273,7 +376,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         pokazEkran(layoutNavigate)
 
-        // Ładowanie pliku HD do podglądu nawigacji
         if (currentPhotoFile != null && currentPhotoFile!!.exists()) {
             val navBitmap = wczytajZmniejszonyBitmap(currentPhotoFile!!.absolutePath, 400, 400)
             ivNavParkedCar.setImageBitmap(navBitmap)
