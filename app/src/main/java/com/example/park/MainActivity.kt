@@ -2,6 +2,7 @@ package com.example.park
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.AlertDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -23,6 +24,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -46,11 +48,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var btnMenuSave: Button
     private lateinit var btnMenuNavigate: Button
-    private lateinit var btnSetTicket: Button // Nowy przycisk biletu
+    private lateinit var btnSetTicket: Button
     private lateinit var btnBackFromSave: Button
     private lateinit var btnBackFromNavigate: Button
     private lateinit var btnTakePhoto: Button
     private lateinit var btnCloseFullscreen: Button
+    private lateinit var btnOpenGoogleMaps: Button
 
     private lateinit var tvStatusSave: TextView
     private lateinit var tvDistance: TextView
@@ -91,11 +94,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         else Toast.makeText(this, "Brak uprawnień do aparatu!", Toast.LENGTH_SHORT).show()
     }
 
-    // Nowe uprawnienia do powiadomień (Android 13+)
     private val requestNotifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) ustawAlarm(1) // Zmiana na 1 do testów
+        if (isGranted) pokazDialogCzasu()
         else Toast.makeText(this, "Brak zgody na powiadomienia!", Toast.LENGTH_SHORT).show()
     }
 
@@ -118,7 +120,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        createNotificationChannel() // Tworzenie kanału systemowego na start
+        createNotificationChannel()
         sharedPref = getSharedPreferences("SmartParkPrefs", Context.MODE_PRIVATE)
 
         layoutMenu = findViewById(R.id.layoutMenu)
@@ -128,11 +130,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnMenuSave = findViewById(R.id.btnMenuSave)
         btnMenuNavigate = findViewById(R.id.btnMenuNavigate)
-        btnSetTicket = findViewById(R.id.btnSetTicket) // Podpięcie przycisku biletu
+        btnSetTicket = findViewById(R.id.btnSetTicket)
         btnBackFromSave = findViewById(R.id.btnBackFromSave)
         btnBackFromNavigate = findViewById(R.id.btnBackFromNavigate)
         btnTakePhoto = findViewById(R.id.btnTakePhoto)
         btnCloseFullscreen = findViewById(R.id.btnCloseFullscreen)
+        btnOpenGoogleMaps = findViewById(R.id.btnOpenGoogleMaps)
 
         tvStatusSave = findViewById(R.id.tvStatusSave)
         tvDistance = findViewById(R.id.tvDistance)
@@ -163,7 +166,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         btnMenuNavigate.setOnClickListener { uruchomNawigacje() }
 
-        // Kliknięcie w bilet
         btnSetTicket.setOnClickListener {
             sprawdzUprawnieniaPowiadomienIUstaw()
         }
@@ -172,6 +174,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnBackFromNavigate.setOnClickListener {
             zatrzymajNawigacje()
             pokazEkran(layoutMenu)
+        }
+
+        btnOpenGoogleMaps.setOnClickListener {
+            parkedLocation?.let { location ->
+                // Tworzymy zapytanie do map Google (q=Lat,Lon) z wymuszonym trybem pieszym (mode=w)
+                val uri = Uri.parse("google.navigation:q=${location.latitude},${location.longitude}&mode=w")
+                val mapIntent = Intent(Intent.ACTION_VIEW, uri)
+
+                // Wymuszamy otwarcie dokładnie w aplikacji Google Maps, a nie w przeglądarce
+                mapIntent.setPackage("com.google.android.apps.maps")
+
+                try {
+                    startActivity(mapIntent)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Nie znaleziono aplikacji Google Maps w telefonie!", Toast.LENGTH_SHORT).show()
+                }
+            } ?: run {
+                Toast.makeText(this, "Najpierw zapisz lokalizację!", Toast.LENGTH_SHORT).show()
+            }
         }
 
         btnTakePhoto.setOnClickListener {
@@ -209,7 +230,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // --- NOWE FUNKCJE DO POWIADOMIEŃ ---
+    // --- FUNKCJE DO POWIADOMIEŃ I OKIENKA ---
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -225,13 +246,65 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun sprawdzUprawnieniaPowiadomienIUstaw() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                ustawAlarm(1) // Tu ustawiasz domyślny czas w minutach
+                pokazDialogCzasu()
             } else {
                 requestNotifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         } else {
-            ustawAlarm(1)
+            pokazDialogCzasu()
         }
+    }
+
+    private fun pokazDialogCzasu() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_time_picker, null)
+
+        val etHoursInput = dialogView.findViewById<EditText>(R.id.etHoursInput)
+        val etMinutesInput = dialogView.findViewById<EditText>(R.id.etMinutesInput)
+
+        val btn15Min = dialogView.findViewById<Button>(R.id.btn15Min)
+        val btn30Min = dialogView.findViewById<Button>(R.id.btn30Min)
+        val btn60Min = dialogView.findViewById<Button>(R.id.btn60Min)
+
+        btn15Min.setOnClickListener {
+            etHoursInput.setText("")
+            etMinutesInput.setText("15")
+        }
+        btn30Min.setOnClickListener {
+            etHoursInput.setText("")
+            etMinutesInput.setText("30")
+        }
+        btn60Min.setOnClickListener {
+            etHoursInput.setText("1")
+            etMinutesInput.setText("0")
+        }
+
+        // Budujemy dialog i zapisujemy go do zmiennej, aby zmodyfikować jego okno
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Ustaw przypomnienie")
+            .setView(dialogView)
+            .setPositiveButton("USTAW") { _, _ ->
+                val hoursStr = etHoursInput.text.toString()
+                val minutesStr = etMinutesInput.text.toString()
+
+                val hours = if (hoursStr.isNotEmpty()) hoursStr.toInt() else 0
+                val minutes = if (minutesStr.isNotEmpty()) minutesStr.toInt() else 0
+
+                val totalMinutes = (hours * 60) + minutes
+
+                if (totalMinutes > 0) {
+                    ustawAlarm(totalMinutes)
+                } else {
+                    Toast.makeText(this, "Wpisz poprawny czas", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("ANULUJ", null)
+            .create()
+
+        // Usuwamy twarde, prostokątne tło systemowe (robimy je przezroczystym)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        // Wyświetlamy nasze zaokrąglone okienko
+        dialog.show()
     }
 
     private fun ustawAlarm(minuty: Int) {
@@ -245,8 +318,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Obliczamy czas odpalenia alarmu = Teraz + podane minuty
-        val triggerTime = System.currentTimeMillis() + (minuty * 60 * 1000)
+        // Obliczamy 90% czasu trwania biletu (w milisekundach)
+        val czasDoAlarmuMs = (minuty * 60 * 1000 * 0.9).toLong()
+        val triggerTime = System.currentTimeMillis() + czasDoAlarmuMs
+
+        // Wyświetlanie zaokrąglonego czasu do alarmu w dymku
+        val minutyDoAlarmu = (czasDoAlarmuMs / 1000 / 60).toInt()
 
         try {
             alarmManager.setExactAndAllowWhileIdle(
@@ -254,11 +331,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 triggerTime,
                 pendingIntent
             )
-            Toast.makeText(this, "Przypomnienie ustawione na $minuty min", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Bilet: $minuty min. Przypomnienie za ok. $minutyDoAlarmu min", Toast.LENGTH_LONG).show()
         } catch (e: SecurityException) {
-            // Zabezpieczenie awaryjne, jeśli system zablokuje dokładne alarmy
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-            Toast.makeText(this, "Przypomnienie włączone ($minuty min)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Bilet: $minuty min. Przypomnienie za ok. $minutyDoAlarmu min", Toast.LENGTH_LONG).show()
         }
     }
     // --- KONIEC FUNKCJI POWIADOMIEŃ ---

@@ -37,7 +37,7 @@
             android:id="@+id/btnSetTicket"
             android:layout_width="match_parent"
             android:layout_height="60dp"
-            android:text="⏰ PRZYPOMNIJ O BILECIE (TEST 1 MIN)"
+            android:text="⏰ PRZYPOMNIJ O BILECIE"
             android:layout_marginTop="16dp"/>
     </LinearLayout>
 
@@ -125,12 +125,20 @@
             android:scaleType="centerCrop"
             android:visibility="gone"/>
 
+        <!-- NOWY PRZYCISK: GOOGLE MAPS -->
+        <Button
+            android:id="@+id/btnOpenGoogleMaps"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="🗺️ OTWÓRZ W GOOGLE MAPS"
+            android:layout_marginTop="24dp"/>
+
         <Button
             android:id="@+id/btnBackFromNavigate"
             android:layout_width="match_parent"
             android:layout_height="50dp"
             android:text="ZAKOŃCZ I WRÓĆ DO MENU"
-            android:layout_marginTop="32dp"/>
+            android:layout_marginTop="12dp"/>
     </LinearLayout>
 
     <!-- EKRAN 4: NAKŁADKA PEŁNOEKRANOWA ZDJĘCIA -->
