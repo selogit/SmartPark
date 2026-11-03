@@ -22,12 +22,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +36,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.gms.location.*
 import com.google.android.gms.tasks.CancellationTokenSource
 import org.json.JSONArray
@@ -56,20 +59,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var layoutFullscreen: View
     private lateinit var layoutHistory: View
 
-    // Przyciski i kontenery
+    // Zmienne do RecyclerView
+    private lateinit var rvHistory: RecyclerView
+    private lateinit var parkingAdapter: ParkingAdapter
+    private var parkingList = mutableListOf<ParkingRecord>()
+
+    // Przyciski
     private lateinit var btnMenuSave: Button
-    private lateinit var btnMenuNavigate: Button // Teraz służy do historii
+    private lateinit var btnMenuNavigate: Button
     private lateinit var btnSetTicket: Button
     private lateinit var btnToggleTheme: Button
     private lateinit var btnShareLocation: Button
     private lateinit var btnBackFromSave: Button
     private lateinit var btnBackFromNavigate: Button
+    private lateinit var btnClearHistory: Button
     private lateinit var btnBackFromHistory: Button
     private lateinit var btnTakePhoto: Button
     private lateinit var btnAddNote: Button
     private lateinit var btnOpenGoogleMaps: Button
     private lateinit var btnCloseFullscreen: Button
-    private lateinit var containerHistory: LinearLayout
 
     // Widoki tekstowe i obrazki
     private lateinit var tvStatusSave: TextView
@@ -84,14 +92,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var parkedLocation: Location? = null
     private var currentLocation: Location? = null
 
-    // Zmienne tymczasowe dla nowo zapisywanego parkowania
     private var tempLat: Double? = null
     private var tempLon: Double? = null
     private var photoUri: Uri? = null
     private var currentPhotoFile: File? = null
     private var currentNote: String? = null
 
-    // Czujniki
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     private var magnetometer: Sensor? = null
@@ -103,26 +109,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private val requestLocationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
-            pobierzLokalizacje()
-        } else {
-            Toast.makeText(this, "Brak uprawnień do GPS!", Toast.LENGTH_SHORT).show()
-            pokazEkran(layoutMenu)
-        }
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) pobierzLokalizacje()
+        else { Toast.makeText(this, "Brak uprawnień do GPS!", Toast.LENGTH_SHORT).show(); pokazEkran(layoutMenu) }
     }
 
     private val requestCameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) uruchomAparat()
-        else Toast.makeText(this, "Brak uprawnień do aparatu!", Toast.LENGTH_SHORT).show()
+        if (isGranted) uruchomAparat() else Toast.makeText(this, "Brak uprawnień do aparatu!", Toast.LENGTH_SHORT).show()
     }
 
     private val requestNotifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) pokazDialogCzasu()
-        else Toast.makeText(this, "Brak zgody na powiadomienia!", Toast.LENGTH_SHORT).show()
+        if (isGranted) pokazDialogCzasu() else Toast.makeText(this, "Brak zgody na powiadomienia!", Toast.LENGTH_SHORT).show()
     }
 
     private val takePictureLauncher = registerForActivityResult(
@@ -153,6 +153,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         layoutNavigate = findViewById(R.id.layoutNavigate)
         layoutFullscreen = findViewById(R.id.layoutFullscreen)
         layoutHistory = findViewById(R.id.layoutHistory)
+        rvHistory = findViewById(R.id.rvHistory)
 
         btnMenuSave = findViewById(R.id.btnMenuSave)
         btnMenuNavigate = findViewById(R.id.btnMenuNavigate)
@@ -161,12 +162,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         btnShareLocation = findViewById(R.id.btnShareLocation)
         btnBackFromSave = findViewById(R.id.btnBackFromSave)
         btnBackFromNavigate = findViewById(R.id.btnBackFromNavigate)
+        btnClearHistory = findViewById(R.id.btnClearHistory)
         btnBackFromHistory = findViewById(R.id.btnBackFromHistory)
         btnTakePhoto = findViewById(R.id.btnTakePhoto)
         btnAddNote = findViewById(R.id.btnAddNote)
         btnOpenGoogleMaps = findViewById(R.id.btnOpenGoogleMaps)
         btnCloseFullscreen = findViewById(R.id.btnCloseFullscreen)
-        containerHistory = findViewById(R.id.containerHistory)
 
         tvStatusSave = findViewById(R.id.tvStatusSave)
         tvDistance = findViewById(R.id.tvDistance)
@@ -181,9 +182,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
-        // KLIKNIĘCIE "ZAPISZ MIEJSCE"
+        // KONFIGURACJA RECYCLER VIEW
+        rvHistory.layoutManager = LinearLayoutManager(this)
+        parkingAdapter = ParkingAdapter(parkingList,
+            onClick = { record ->
+                uruchomNawigacjeZHistorii(record)
+            },
+            onLongClick = { position ->
+                pokazDialogUsuwania(position)
+            }
+        )
+        rvHistory.adapter = parkingAdapter
+
         btnMenuSave.setOnClickListener {
-            // Czyścimy zmienne tymczasowe przed nowym pomiarem
             tempLat = null
             tempLon = null
             currentPhotoFile = null
@@ -199,11 +210,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             sprawdzUprawnieniaIPobierz()
         }
 
-        // KLIKNIĘCIE "HISTORIA PARKOWAŃ"
-        btnMenuNavigate.setOnClickListener {
-            ladowanieHistorii()
-        }
-
+        btnMenuNavigate.setOnClickListener { ladowanieHistorii() }
         btnSetTicket.setOnClickListener { sprawdzUprawnieniaPowiadomienIUstaw() }
 
         btnToggleTheme.setOnClickListener {
@@ -226,23 +233,39 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
         }
 
-        // ZAPIS I POWRÓT Z EKRANU POZYSKIWANIA GPS
         btnBackFromSave.setOnClickListener {
-            // Zapisujemy wszystko do JSON tylko jeśli udało się zdobyć współrzędne
-            if (tempLat != null && tempLon != null) {
-                zapiszDoHistorii()
-            }
+            if (tempLat != null && tempLon != null) zapiszDoHistorii()
             pokazEkran(layoutMenu)
         }
 
         btnBackFromNavigate.setOnClickListener {
             zatrzymajNawigacje()
-            pokazEkran(layoutHistory) // Wracamy do historii, a nie głównego menu
+            pokazEkran(layoutHistory)
         }
 
-        btnBackFromHistory.setOnClickListener {
-            pokazEkran(layoutMenu)
+        btnClearHistory.setOnClickListener {
+            if (parkingList.isEmpty()) {
+                Toast.makeText(this, "Historia jest już pusta!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            AlertDialog.Builder(this)
+                .setTitle("Wyczyść historię")
+                .setMessage("Czy na pewno chcesz usunąć WSZYSTKIE zapisane parkowania? Tej operacji nie można cofnąć.")
+                .setPositiveButton("USUŃ WSZYSTKO") { _, _ ->
+                    // Wyczyszczenie listy w pamięci RAM i odświeżenie widoku
+                    parkingList.clear()
+                    parkingAdapter.notifyDataSetChanged()
+
+                    // Trwałe usunięcie z notatnika telefonu
+                    sharedPref.edit().remove("parking_history").apply()
+                    Toast.makeText(this, "Historia została wyczyszczona", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("ANULUJ", null)
+                .show()
         }
+
+        btnBackFromHistory.setOnClickListener { pokazEkran(layoutMenu) }
 
         btnTakePhoto.setOnClickListener {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) uruchomAparat()
@@ -256,11 +279,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val uri = Uri.parse("google.navigation:q=${location.latitude},${location.longitude}&mode=w")
                 val mapIntent = Intent(Intent.ACTION_VIEW, uri)
                 mapIntent.setPackage("com.google.android.apps.maps")
-                try {
-                    startActivity(mapIntent)
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Nie znaleziono aplikacji Mapy!", Toast.LENGTH_SHORT).show()
-                }
+                try { startActivity(mapIntent) } catch (e: Exception) { Toast.makeText(this, "Brak Map Google!", Toast.LENGTH_SHORT).show() }
             }
         }
 
@@ -278,6 +297,38 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         ivNavParkedCar.setOnClickListener(openFullscreenListener)
         btnCloseFullscreen.setOnClickListener { layoutFullscreen.visibility = View.GONE }
 
+        // OBSŁUGA SYSTEMOWEGO GESTU COFANIA
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when {
+                    // 1. Jeśli otwarte jest powiększone zdjęcie, zamknij tylko zdjęcie
+                    layoutFullscreen.visibility == View.VISIBLE -> {
+                        layoutFullscreen.visibility = View.GONE
+                    }
+                    // 2. Jeśli jesteśmy w trybie zapisu, wróć do menu (i ewentualnie zapisz)
+                    layoutSave.visibility == View.VISIBLE -> {
+                        if (tempLat != null && tempLon != null) zapiszDoHistorii()
+                        pokazEkran(layoutMenu)
+                    }
+                    // 3. Jeśli jesteśmy w trybie kompasu, wyłącz nawigację i wróć do historii
+                    layoutNavigate.visibility == View.VISIBLE -> {
+                        zatrzymajNawigacje()
+                        pokazEkran(layoutHistory)
+                    }
+                    // 4. Jeśli przeglądamy historię, wróć do menu głównego
+                    layoutHistory.visibility == View.VISIBLE -> {
+                        pokazEkran(layoutMenu)
+                    }
+                    // 5. Jeśli jesteśmy w menu głównym, pozwól systemowi normalnie zamknąć aplikację
+                    else -> {
+                        isEnabled = false // Wyłącza nasze przechwytywanie
+                        onBackPressedDispatcher.onBackPressed() // Zamyka aplikację
+                        isEnabled = true // Włącza ponownie na przyszłość
+                    }
+                }
+            }
+        })
+
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 locationResult.lastLocation?.let {
@@ -288,99 +339,102 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // --- FUNKCJE BAZY DANYCH (JSON HISTORY) ---
-
+    // --- FUNKCJE HISTORII (RECYCLER VIEW) ---
     private fun zapiszDoHistorii() {
-        // Pobierz aktualną tablicę lub utwórz nową pustą
         val historyStr = sharedPref.getString("parking_history", "[]")
         val array = JSONArray(historyStr)
 
         val obj = JSONObject()
         val sdf = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
-        val currentDate = sdf.format(Date())
-
-        obj.put("date", currentDate)
+        obj.put("date", sdf.format(Date()))
         obj.put("lat", tempLat)
         obj.put("lon", tempLon)
         obj.put("photoPath", currentPhotoFile?.absolutePath ?: "")
         obj.put("note", currentNote ?: "")
 
-        // Zabezpieczenie: przechowujemy maksymalnie 10 ostatnich parkowań, żeby nie zapchać pamięci
-        if (array.length() >= 10) {
-            array.remove(0) // Usuwa najstarszy wpis
-        }
-
+        // Limit usunięty - aplikacja dopisze każdy nowy element do końca listy
         array.put(obj)
+
         sharedPref.edit().putString("parking_history", array.toString()).apply()
         Toast.makeText(this, "Zapisano w historii!", Toast.LENGTH_SHORT).show()
     }
 
     private fun ladowanieHistorii() {
         pokazEkran(layoutHistory)
-        containerHistory.removeAllViews()
+        parkingList.clear() // Czyszczenie starej listy
 
         val historyStr = sharedPref.getString("parking_history", "[]")
         val array = JSONArray(historyStr)
 
-        if (array.length() == 0) {
-            val tvEmpty = TextView(this)
-            tvEmpty.text = "Brak zapisanych parkowań."
-            tvEmpty.textSize = 18f
-            tvEmpty.textAlignment = View.TEXT_ALIGNMENT_CENTER
-            containerHistory.addView(tvEmpty)
-            return
-        }
-
-        // Ładujemy od najnowszego (od końca tablicy) do najstarszego
+        // Ładujemy od końca, aby najnowsze wpisy były na szczycie listy
         for (i in array.length() - 1 downTo 0) {
             val obj = array.getJSONObject(i)
-            val view = layoutInflater.inflate(R.layout.item_parking, null)
+            parkingList.add(ParkingRecord(
+                date = obj.getString("date"),
+                lat = obj.getDouble("lat"),
+                lon = obj.getDouble("lon"),
+                photoPath = obj.optString("photoPath", ""),
+                note = obj.optString("note", "")
+            ))
+        }
 
-            val tvDate = view.findViewById<TextView>(R.id.tvItemDate)
-            val tvNote = view.findViewById<TextView>(R.id.tvItemNote)
+        // Odświeżamy adapter, żeby narysował widoki
+        parkingAdapter.notifyDataSetChanged()
 
-            tvDate.text = obj.getString("date")
-            val note = obj.optString("note", "")
-            if (note.isNotEmpty()) {
-                tvNote.text = note
-                tvNote.visibility = View.VISIBLE
-            } else {
-                tvNote.visibility = View.GONE
-            }
-
-            // Obsługa kliknięcia w kafelek
-            view.setOnClickListener {
-                uruchomNawigacjeZHistorii(obj)
-            }
-
-            containerHistory.addView(view)
+        if (parkingList.isEmpty()) {
+            Toast.makeText(this, "Brak zapisanych parkowań.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun uruchomNawigacjeZHistorii(obj: JSONObject) {
-        val lat = obj.getDouble("lat")
-        val lon = obj.getDouble("lon")
-        val photoPath = obj.optString("photoPath", "")
-        val note = obj.optString("note", "")
+    private fun pokazDialogUsuwania(position: Int) {
+        AlertDialog.Builder(this)
+            .setTitle("Usuń wpis")
+            .setMessage("Czy na pewno chcesz trwale usunąć to parkowanie z historii?")
+            .setPositiveButton("USUŃ") { _, _ ->
+                // Usunięcie elementu z modelu danych i odświeżenie interfejsu
+                parkingList.removeAt(position)
+                parkingAdapter.notifyItemRemoved(position)
+                zapiszZaktualizowanaHistorie()
+            }
+            .setNegativeButton("ANULUJ", null)
+            .show()
+    }
 
+    private fun zapiszZaktualizowanaHistorie() {
+        val array = JSONArray()
+        // Ponieważ lista wyświetla od najnowszego, a w bazie najstarszy musi być na indeksie 0,
+        // zapisujemy naszą listę z powrotem od tyłu.
+        for (i in parkingList.size - 1 downTo 0) {
+            val record = parkingList[i]
+            val obj = JSONObject()
+            obj.put("date", record.date)
+            obj.put("lat", record.lat)
+            obj.put("lon", record.lon)
+            obj.put("photoPath", record.photoPath)
+            obj.put("note", record.note)
+            array.put(obj)
+        }
+        sharedPref.edit().putString("parking_history", array.toString()).apply()
+    }
+
+    private fun uruchomNawigacjeZHistorii(record: ParkingRecord) {
         parkedLocation = Location("").apply {
-            latitude = lat
-            longitude = lon
+            latitude = record.lat
+            longitude = record.lon
         }
 
-        if (photoPath.isNotEmpty()) {
-            val file = File(photoPath)
+        if (record.photoPath.isNotEmpty()) {
+            val file = File(record.photoPath)
             currentPhotoFile = if (file.exists()) file else null
         } else {
             currentPhotoFile = null
         }
 
-        currentNote = if (note.isNotEmpty()) note else null
+        currentNote = if (record.note.isNotEmpty()) record.note else null
         uruchomNawigacje()
     }
 
-    // --- RESZTA FUNKCJI ---
-
+    // --- RESZTA FUNKCJI POMOCNICZYCH ---
     private fun pokazDialogNotatki() {
         val editText = EditText(this)
         editText.hint = "Np. Sektor zielony, miejsce 45"
@@ -507,11 +561,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun sprawdzUprawnieniaIPobierz() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            pobierzLokalizacje()
-        } else {
-            requestLocationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) pobierzLokalizacje()
+        else requestLocationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
     private fun pobierzLokalizacje() {
@@ -530,7 +581,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             .addOnSuccessListener { location ->
                 if (location != null) {
                     val dokladnosc = location.accuracy
-                    // Zapisujemy tymczasowo (zapis twardy nastąpi przyciskiem Wróć)
                     tempLat = location.latitude
                     tempLon = location.longitude
 
@@ -607,4 +657,58 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
         sensorManager.unregisterListener(this)
     }
+}
+
+// ==========================================
+// NOWE KLASY DLA WIDOKU RECYCLER VIEW
+// ==========================================
+
+// Model danych (pojedynczy wpis z historii)
+data class ParkingRecord(
+    val date: String,
+    val lat: Double,
+    val lon: Double,
+    val photoPath: String,
+    val note: String
+)
+
+// Adapter zajmujący się wstrzykiwaniem danych do wyglądu pliku item_parking.xml
+class ParkingAdapter(
+    private val items: List<ParkingRecord>,
+    private val onClick: (ParkingRecord) -> Unit,
+    private val onLongClick: (Int) -> Unit
+) : RecyclerView.Adapter<ParkingAdapter.ViewHolder>() {
+
+    class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val tvDate: TextView = view.findViewById(R.id.tvItemDate)
+        val tvNote: TextView = view.findViewById(R.id.tvItemNote)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_parking, parent, false)
+        return ViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        val item = items[position]
+        holder.tvDate.text = item.date
+
+        if (item.note.isNotEmpty()) {
+            holder.tvNote.text = item.note
+            holder.tvNote.visibility = View.VISIBLE
+        } else {
+            holder.tvNote.visibility = View.GONE
+        }
+
+        // Zwykłe kliknięcie włącza nawigację
+        holder.itemView.setOnClickListener { onClick(item) }
+
+        // Długie kliknięcie odpala dialog usuwania
+        holder.itemView.setOnLongClickListener {
+            onLongClick(position)
+            true // "true" informuje system, że obsłużyliśmy długie kliknięcie
+        }
+    }
+
+    override fun getItemCount() = items.size
 }
