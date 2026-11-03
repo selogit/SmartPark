@@ -27,6 +27,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,29 +37,41 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.google.android.gms.location.*
 import com.google.android.gms.tasks.CancellationTokenSource
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var sharedPref: SharedPreferences
 
+    // Ekrany
     private lateinit var layoutMenu: View
     private lateinit var layoutSave: View
     private lateinit var layoutNavigate: View
     private lateinit var layoutFullscreen: View
+    private lateinit var layoutHistory: View
 
+    // Przyciski i kontenery
     private lateinit var btnMenuSave: Button
-    private lateinit var btnMenuNavigate: Button
+    private lateinit var btnMenuNavigate: Button // Teraz służy do historii
     private lateinit var btnSetTicket: Button
-    private lateinit var btnToggleTheme: Button // Przycisk motywu
+    private lateinit var btnToggleTheme: Button
+    private lateinit var btnShareLocation: Button
     private lateinit var btnBackFromSave: Button
     private lateinit var btnBackFromNavigate: Button
+    private lateinit var btnBackFromHistory: Button
     private lateinit var btnTakePhoto: Button
     private lateinit var btnAddNote: Button
     private lateinit var btnOpenGoogleMaps: Button
     private lateinit var btnCloseFullscreen: Button
+    private lateinit var containerHistory: LinearLayout
 
+    // Widoki tekstowe i obrazki
     private lateinit var tvStatusSave: TextView
     private lateinit var tvDistance: TextView
     private lateinit var tvArrow: TextView
@@ -67,13 +80,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var ivNavParkedCar: ImageView
     private lateinit var ivFullscreen: ImageView
 
+    // Zmienne nawigacyjne
     private var parkedLocation: Location? = null
     private var currentLocation: Location? = null
 
+    // Zmienne tymczasowe dla nowo zapisywanego parkowania
+    private var tempLat: Double? = null
+    private var tempLon: Double? = null
     private var photoUri: Uri? = null
     private var currentPhotoFile: File? = null
     private var currentNote: String? = null
 
+    // Czujniki
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     private var magnetometer: Sensor? = null
@@ -111,8 +129,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         ActivityResultContracts.TakePicture()
     ) { success ->
         if (success && currentPhotoFile != null) {
-            sharedPref.edit().putString("photoPath", currentPhotoFile!!.absolutePath).apply()
-
             val bitmap = wczytajZmniejszonyBitmap(currentPhotoFile!!.absolutePath, 800, 800)
             if (bitmap != null) {
                 ivParkedCar.setImageBitmap(bitmap)
@@ -125,7 +141,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ZAINICJOWANIE PREFERENCJI I MOTYWU PRZED ZAŁADOWANIEM EKRANU
         sharedPref = getSharedPreferences("SmartParkPrefs", Context.MODE_PRIVATE)
         val savedTheme = sharedPref.getInt("themeMode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         AppCompatDelegate.setDefaultNightMode(savedTheme)
@@ -137,17 +152,21 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         layoutSave = findViewById(R.id.layoutSave)
         layoutNavigate = findViewById(R.id.layoutNavigate)
         layoutFullscreen = findViewById(R.id.layoutFullscreen)
+        layoutHistory = findViewById(R.id.layoutHistory)
 
         btnMenuSave = findViewById(R.id.btnMenuSave)
         btnMenuNavigate = findViewById(R.id.btnMenuNavigate)
         btnSetTicket = findViewById(R.id.btnSetTicket)
-        btnToggleTheme = findViewById(R.id.btnToggleTheme) // Podpięcie przycisku motywu
+        btnToggleTheme = findViewById(R.id.btnToggleTheme)
+        btnShareLocation = findViewById(R.id.btnShareLocation)
         btnBackFromSave = findViewById(R.id.btnBackFromSave)
         btnBackFromNavigate = findViewById(R.id.btnBackFromNavigate)
+        btnBackFromHistory = findViewById(R.id.btnBackFromHistory)
         btnTakePhoto = findViewById(R.id.btnTakePhoto)
         btnAddNote = findViewById(R.id.btnAddNote)
         btnOpenGoogleMaps = findViewById(R.id.btnOpenGoogleMaps)
         btnCloseFullscreen = findViewById(R.id.btnCloseFullscreen)
+        containerHistory = findViewById(R.id.containerHistory)
 
         tvStatusSave = findViewById(R.id.tvStatusSave)
         tvDistance = findViewById(R.id.tvDistance)
@@ -162,57 +181,72 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
-        wczytajZapisaneAuto()
-
+        // KLIKNIĘCIE "ZAPISZ MIEJSCE"
         btnMenuSave.setOnClickListener {
-            sharedPref.edit().remove("lat").remove("lon").remove("photoPath").remove("savedNote").apply()
+            // Czyścimy zmienne tymczasowe przed nowym pomiarem
+            tempLat = null
+            tempLon = null
+            currentPhotoFile = null
+            currentNote = null
 
             btnTakePhoto.visibility = View.GONE
             btnAddNote.visibility = View.GONE
             btnAddNote.text = "📝 DODAJ NOTATKĘ (NP. PIĘTRO)"
             ivParkedCar.visibility = View.GONE
             ivParkedCar.setImageBitmap(null)
-            currentPhotoFile = null
-            parkedLocation = null
-            currentNote = null
 
             pokazEkran(layoutSave)
             sprawdzUprawnieniaIPobierz()
         }
 
-        btnMenuNavigate.setOnClickListener { uruchomNawigacje() }
-
-        btnSetTicket.setOnClickListener {
-            sprawdzUprawnieniaPowiadomienIUstaw()
+        // KLIKNIĘCIE "HISTORIA PARKOWAŃ"
+        btnMenuNavigate.setOnClickListener {
+            ladowanieHistorii()
         }
 
-        // Zmiana motywu po kliknięciu
+        btnSetTicket.setOnClickListener { sprawdzUprawnieniaPowiadomienIUstaw() }
+
         btnToggleTheme.setOnClickListener {
             val currentMode = sharedPref.getInt("themeMode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
-            val newMode = if (currentMode == AppCompatDelegate.MODE_NIGHT_YES) {
-                AppCompatDelegate.MODE_NIGHT_NO // Zmień na jasny
-            } else {
-                AppCompatDelegate.MODE_NIGHT_YES // Zmień na ciemny
-            }
-
-            // Zapisz do pamięci i wymuś zmianę w całej aplikacji
+            val newMode = if (currentMode == AppCompatDelegate.MODE_NIGHT_YES) AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
             sharedPref.edit().putInt("themeMode", newMode).apply()
             AppCompatDelegate.setDefaultNightMode(newMode)
         }
 
-        btnBackFromSave.setOnClickListener { pokazEkran(layoutMenu) }
+        btnShareLocation.setOnClickListener {
+            parkedLocation?.let { location ->
+                val mapsUrl = "https://maps.google.com/?q=${location.latitude},${location.longitude}"
+                val shareMessage = "Moje auto jest zaparkowane tutaj:\n$mapsUrl"
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Lokalizacja mojego auta")
+                    putExtra(Intent.EXTRA_TEXT, shareMessage)
+                }
+                startActivity(Intent.createChooser(shareIntent, "Udostępnij lokalizację przez:"))
+            }
+        }
+
+        // ZAPIS I POWRÓT Z EKRANU POZYSKIWANIA GPS
+        btnBackFromSave.setOnClickListener {
+            // Zapisujemy wszystko do JSON tylko jeśli udało się zdobyć współrzędne
+            if (tempLat != null && tempLon != null) {
+                zapiszDoHistorii()
+            }
+            pokazEkran(layoutMenu)
+        }
 
         btnBackFromNavigate.setOnClickListener {
             zatrzymajNawigacje()
+            pokazEkran(layoutHistory) // Wracamy do historii, a nie głównego menu
+        }
+
+        btnBackFromHistory.setOnClickListener {
             pokazEkran(layoutMenu)
         }
 
         btnTakePhoto.setOnClickListener {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                uruchomAparat()
-            } else {
-                requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) uruchomAparat()
+            else requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
 
         btnAddNote.setOnClickListener { pokazDialogNotatki() }
@@ -242,7 +276,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         ivParkedCar.setOnClickListener(openFullscreenListener)
         ivNavParkedCar.setOnClickListener(openFullscreenListener)
-
         btnCloseFullscreen.setOnClickListener { layoutFullscreen.visibility = View.GONE }
 
         locationCallback = object : LocationCallback() {
@@ -254,6 +287,99 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             }
         }
     }
+
+    // --- FUNKCJE BAZY DANYCH (JSON HISTORY) ---
+
+    private fun zapiszDoHistorii() {
+        // Pobierz aktualną tablicę lub utwórz nową pustą
+        val historyStr = sharedPref.getString("parking_history", "[]")
+        val array = JSONArray(historyStr)
+
+        val obj = JSONObject()
+        val sdf = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
+        val currentDate = sdf.format(Date())
+
+        obj.put("date", currentDate)
+        obj.put("lat", tempLat)
+        obj.put("lon", tempLon)
+        obj.put("photoPath", currentPhotoFile?.absolutePath ?: "")
+        obj.put("note", currentNote ?: "")
+
+        // Zabezpieczenie: przechowujemy maksymalnie 10 ostatnich parkowań, żeby nie zapchać pamięci
+        if (array.length() >= 10) {
+            array.remove(0) // Usuwa najstarszy wpis
+        }
+
+        array.put(obj)
+        sharedPref.edit().putString("parking_history", array.toString()).apply()
+        Toast.makeText(this, "Zapisano w historii!", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun ladowanieHistorii() {
+        pokazEkran(layoutHistory)
+        containerHistory.removeAllViews()
+
+        val historyStr = sharedPref.getString("parking_history", "[]")
+        val array = JSONArray(historyStr)
+
+        if (array.length() == 0) {
+            val tvEmpty = TextView(this)
+            tvEmpty.text = "Brak zapisanych parkowań."
+            tvEmpty.textSize = 18f
+            tvEmpty.textAlignment = View.TEXT_ALIGNMENT_CENTER
+            containerHistory.addView(tvEmpty)
+            return
+        }
+
+        // Ładujemy od najnowszego (od końca tablicy) do najstarszego
+        for (i in array.length() - 1 downTo 0) {
+            val obj = array.getJSONObject(i)
+            val view = layoutInflater.inflate(R.layout.item_parking, null)
+
+            val tvDate = view.findViewById<TextView>(R.id.tvItemDate)
+            val tvNote = view.findViewById<TextView>(R.id.tvItemNote)
+
+            tvDate.text = obj.getString("date")
+            val note = obj.optString("note", "")
+            if (note.isNotEmpty()) {
+                tvNote.text = note
+                tvNote.visibility = View.VISIBLE
+            } else {
+                tvNote.visibility = View.GONE
+            }
+
+            // Obsługa kliknięcia w kafelek
+            view.setOnClickListener {
+                uruchomNawigacjeZHistorii(obj)
+            }
+
+            containerHistory.addView(view)
+        }
+    }
+
+    private fun uruchomNawigacjeZHistorii(obj: JSONObject) {
+        val lat = obj.getDouble("lat")
+        val lon = obj.getDouble("lon")
+        val photoPath = obj.optString("photoPath", "")
+        val note = obj.optString("note", "")
+
+        parkedLocation = Location("").apply {
+            latitude = lat
+            longitude = lon
+        }
+
+        if (photoPath.isNotEmpty()) {
+            val file = File(photoPath)
+            currentPhotoFile = if (file.exists()) file else null
+        } else {
+            currentPhotoFile = null
+        }
+
+        currentNote = if (note.isNotEmpty()) note else null
+        uruchomNawigacje()
+    }
+
+    // --- RESZTA FUNKCJI ---
 
     private fun pokazDialogNotatki() {
         val editText = EditText(this)
@@ -273,11 +399,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val noteText = editText.text.toString()
                 if (noteText.isNotEmpty()) {
                     currentNote = noteText
-                    sharedPref.edit().putString("savedNote", noteText).apply()
                     btnAddNote.text = "📝 NOTATKA: $noteText"
                 } else {
                     currentNote = null
-                    sharedPref.edit().remove("savedNote").apply()
                     btnAddNote.text = "📝 DODAJ NOTATKĘ (NP. PIĘTRO)"
                 }
             }
@@ -295,11 +419,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun sprawdzUprawnieniaPowiadomienIUstaw() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                pokazDialogCzasu()
-            } else {
-                requestNotifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) pokazDialogCzasu()
+            else requestNotifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             pokazDialogCzasu()
         }
@@ -307,16 +428,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun pokazDialogCzasu() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_time_picker, null)
-
         val etHoursInput = dialogView.findViewById<EditText>(R.id.etHoursInput)
         val etMinutesInput = dialogView.findViewById<EditText>(R.id.etMinutesInput)
-        val btn15Min = dialogView.findViewById<Button>(R.id.btn15Min)
-        val btn30Min = dialogView.findViewById<Button>(R.id.btn30Min)
-        val btn60Min = dialogView.findViewById<Button>(R.id.btn60Min)
 
-        btn15Min.setOnClickListener { etHoursInput.setText(""); etMinutesInput.setText("15") }
-        btn30Min.setOnClickListener { etHoursInput.setText(""); etMinutesInput.setText("30") }
-        btn60Min.setOnClickListener { etHoursInput.setText("1"); etMinutesInput.setText("0") }
+        dialogView.findViewById<Button>(R.id.btn15Min).setOnClickListener { etHoursInput.setText(""); etMinutesInput.setText("15") }
+        dialogView.findViewById<Button>(R.id.btn30Min).setOnClickListener { etHoursInput.setText(""); etMinutesInput.setText("30") }
+        dialogView.findViewById<Button>(R.id.btn60Min).setOnClickListener { etHoursInput.setText("1"); etMinutesInput.setText("0") }
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Ustaw przypomnienie")
@@ -327,9 +444,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                 val hours = if (hoursStr.isNotEmpty()) hoursStr.toInt() else 0
                 val minutes = if (minutesStr.isNotEmpty()) minutesStr.toInt() else 0
                 val totalMinutes = (hours * 60) + minutes
-
-                if (totalMinutes > 0) ustawAlarm(totalMinutes)
-                else Toast.makeText(this, "Wpisz poprawny czas", Toast.LENGTH_SHORT).show()
+                if (totalMinutes > 0) ustawAlarm(totalMinutes) else Toast.makeText(this, "Wpisz poprawny czas", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("ANULUJ", null)
             .create()
@@ -353,24 +468,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         } catch (e: SecurityException) {
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             Toast.makeText(this, "Bilet: $minuty min. Przypomnienie za ok. $minutyDoAlarmu min", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun wczytajZapisaneAuto() {
-        val savedLat = sharedPref.getString("lat", null)
-        val savedLon = sharedPref.getString("lon", null)
-        val savedPhotoPath = sharedPref.getString("photoPath", null)
-        currentNote = sharedPref.getString("savedNote", null)
-
-        if (savedLat != null && savedLon != null) {
-            parkedLocation = Location("").apply {
-                latitude = savedLat.toDouble()
-                longitude = savedLon.toDouble()
-            }
-            if (savedPhotoPath != null) {
-                val file = File(savedPhotoPath)
-                if (file.exists()) currentPhotoFile = file
-            }
         }
     }
 
@@ -405,6 +502,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         layoutMenu.visibility = View.GONE
         layoutSave.visibility = View.GONE
         layoutNavigate.visibility = View.GONE
+        layoutHistory.visibility = View.GONE
         widocznyEkran.visibility = View.VISIBLE
     }
 
@@ -432,24 +530,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             .addOnSuccessListener { location ->
                 if (location != null) {
                     val dokladnosc = location.accuracy
-                    parkedLocation = location
+                    // Zapisujemy tymczasowo (zapis twardy nastąpi przyciskiem Wróć)
+                    tempLat = location.latitude
+                    tempLon = location.longitude
 
-                    sharedPref.edit().apply {
-                        putString("lat", location.latitude.toString())
-                        putString("lon", location.longitude.toString())
-                        apply()
-                    }
-
-                    if (dokladnosc > 20f) {
-                        tvStatusSave.text = "📍 Zaparkowano (Słaby sygnał)\nBłąd pomiaru: ±${dokladnosc.toInt()} m"
-                    } else {
-                        tvStatusSave.text = "📍 Zaparkowano precyzyjnie!\nDokładność: ±${dokladnosc.toInt()} m"
-                    }
+                    if (dokladnosc > 20f) tvStatusSave.text = "📍 Zaparkowano (Słaby sygnał)\nBłąd pomiaru: ±${dokladnosc.toInt()} m"
+                    else tvStatusSave.text = "📍 Zaparkowano precyzyjnie!\nDokładność: ±${dokladnosc.toInt()} m"
 
                     btnTakePhoto.visibility = View.VISIBLE
                     btnAddNote.visibility = View.VISIBLE
                     btnBackFromSave.text = "GOTOWE - WRÓĆ DO MENU"
-
                 } else {
                     tvStatusSave.text = "Brak sygnału. Wyjdź na zewnątrz."
                 }
@@ -457,11 +547,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun uruchomNawigacje() {
-        if (parkedLocation == null) {
-            Toast.makeText(this, "Najpierw zapisz miejsce zaparkowania!", Toast.LENGTH_SHORT).show()
-            return
-        }
-
+        if (parkedLocation == null) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
 
         pokazEkran(layoutNavigate)
@@ -481,9 +567,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             tvNavNote.visibility = View.GONE
         }
 
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500)
-            .setMinUpdateIntervalMillis(1000).build()
-
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500).setMinUpdateIntervalMillis(1000).build()
         fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
         sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_UI)
@@ -496,12 +580,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     private fun obliczKierunek() {
         if (parkedLocation == null || currentLocation == null) return
-
         val distance = currentLocation!!.distanceTo(parkedLocation!!)
         val bearing = currentLocation!!.bearingTo(parkedLocation!!)
-
         tvDistance.text = "Odległość: ${distance.toInt()} m"
-
         var rotation = bearing - currentAzimuth
         if (rotation < 0) rotation += 360f
         tvArrow.rotation = rotation
@@ -522,7 +603,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-
     override fun onPause() {
         super.onPause()
         sensorManager.unregisterListener(this)

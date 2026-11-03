@@ -31,21 +31,21 @@
             android:id="@+id/btnMenuNavigate"
             android:layout_width="match_parent"
             android:layout_height="60dp"
-            android:text="PROWADŹ DO AUTA"/>
+            android:text="HISTORIA PARKOWAŃ"
+            android:layout_marginBottom="16dp"/>
 
         <Button
             android:id="@+id/btnSetTicket"
             android:layout_width="match_parent"
             android:layout_height="60dp"
-            android:text="⏰ PRZYPOMNIJ O BILECIE"
-            android:layout_marginTop="16dp"/>
+            android:text="⏰ PILNUJ BILETU"
+            android:layout_marginBottom="16dp"/>
 
         <Button
             android:id="@+id/btnToggleTheme"
             android:layout_width="match_parent"
             android:layout_height="50dp"
-            android:text="🌓 ZMIEŃ MOTYW (JASNY/CIEMNY)"
-            android:layout_marginTop="16dp"/>
+            android:text="🌓 ZMIEŃ MOTYW"/>
     </LinearLayout>
 
     <!-- EKRAN 2: ZAPISYWANIE POZYCJI -->
@@ -98,7 +98,7 @@
             android:text="POWRÓT DO MENU"/>
     </LinearLayout>
 
-    <!-- EKRAN 3: KOMPAS (NAWIGACJA) -->
+    <!-- EKRAN 3: KOMPAS I SZCZEGÓŁY (NAWIGACJA) -->
     <LinearLayout
         android:id="@+id/layoutNavigate"
         android:layout_width="match_parent"
@@ -150,13 +150,20 @@
             android:scaleType="centerCrop"
             android:visibility="gone"/>
 
-        <!-- NOWY PRZYCISK: GOOGLE MAPS -->
         <Button
             android:id="@+id/btnOpenGoogleMaps"
             android:layout_width="match_parent"
             android:layout_height="50dp"
             android:text="🗺️ OTWÓRZ W GOOGLE MAPS"
             android:layout_marginTop="24dp"/>
+
+        <!-- Przeniesiony przycisk udostępniania -->
+        <Button
+            android:id="@+id/btnShareLocation"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="📤 UDOSTĘPNIJ POZYCJĘ"
+            android:layout_marginTop="12dp"/>
 
         <Button
             android:id="@+id/btnBackFromNavigate"
@@ -188,5 +195,43 @@
             android:layout_gravity="top|end"
             android:layout_margin="16dp"/>
     </FrameLayout>
+
+    <!-- EKRAN 5: HISTORIA -->
+    <LinearLayout
+        android:id="@+id/layoutHistory"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Historia Parkowań"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"
+            android:textAlignment="center"/>
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <LinearLayout
+                android:id="@+id/containerHistory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"/>
+        </ScrollView>
+
+        <Button
+            android:id="@+id/btnBackFromHistory"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="POWRÓT DO MENU"
+            android:layout_marginTop="16dp"/>
+    </LinearLayout>
 
 </FrameLayout>
