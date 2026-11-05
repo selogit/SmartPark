@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -99,88 +100,117 @@
     </LinearLayout>
 
     <!-- EKRAN 3: KOMPAS I SZCZEGÓŁY (NAWIGACJA) -->
-    <LinearLayout
+    <RelativeLayout
         android:id="@+id/layoutNavigate"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:padding="24dp"
         android:visibility="gone">
 
-        <TextView
+        <!-- ScrollView zapobiega ucinaniu elementów na małych ekranach -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="24dp"
+                android:paddingBottom="100dp"> <!-- Dodatkowy margines na dole, żeby przewinąć pod przyciskiem udostępniania -->
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Kieruj się w stronę strzałki:"
+                    android:textSize="18sp"
+                    android:textAlignment="center"/>
+
+                <TextView
+                    android:id="@+id/tvDistance"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Odległość: 0 m"
+                    android:textSize="24sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"/>
+
+                <TextView
+                    android:id="@+id/tvNavNote"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Notatka"
+                    android:textSize="18sp"
+                    android:textStyle="italic"
+                    android:layout_marginTop="4dp"
+                    android:visibility="gone"/>
+
+                <TextView
+                    android:id="@+id/tvArrow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⬆"
+                    android:textSize="100sp"
+                    android:layout_marginTop="8dp"/>
+
+                <!-- Zaokrąglone zdjęcie -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardNavParkedCar"
+                    android:layout_width="150dp"
+                    android:layout_height="150dp"
+                    android:layout_marginTop="16dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="2dp"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/ivNavParkedCar"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="centerCrop"/>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Wbudowana mapa -->
+                <androidx.fragment.app.FragmentContainerView
+                    android:id="@+id/mapFragment"
+                    android:name="com.google.android.gms.maps.SupportMapFragment"
+                    android:layout_width="match_parent"
+                    android:layout_height="200dp"
+                    android:layout_marginTop="24dp"
+                    android:layout_marginBottom="16dp"/>
+
+                <!-- Przycisk zewn. aplikacji (który chciałeś zostawić) -->
+                <Button
+                    android:id="@+id/btnOpenGoogleMaps"
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp"
+                    android:text="🗺️ OTWÓRZ W APLIKACJI MAPY"
+                    android:layout_marginTop="8dp"/>
+
+                <!-- Przycisk powrotu -->
+                <Button
+                    android:id="@+id/btnBackFromNavigate"
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp"
+                    android:text="ZAKOŃCZ I WRÓĆ DO MENU"
+                    android:layout_marginTop="12dp"/>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- NOWOCZESNY LEWITUJĄCY PRZYCISK (FAB) DO UDOSTĘPNIANIA W PRAWYM GÓRNYM ROGU -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fabShare"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Kieruj się w stronę strzałki:"
-            android:textSize="18sp"
-            android:textAlignment="center"/>
-
-        <TextView
-            android:id="@+id/tvDistance"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Odległość: 0 m"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:layout_marginTop="16dp"/>
-
-        <TextView
-            android:id="@+id/tvNavNote"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Notatka: "
-            android:textSize="20sp"
-            android:textStyle="italic"
-            android:layout_marginTop="8dp"
-            android:visibility="gone"/>
-
-        <TextView
-            android:id="@+id/tvArrow"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="⬆"
-            android:textSize="120sp"
-            android:layout_marginTop="16dp"/>
-
-        <!-- NOWA: WBUDOWANA MAPA GOOGLE -->
-        <androidx.fragment.app.FragmentContainerView
-            android:id="@+id/mapFragment"
-            android:name="com.google.android.gms.maps.SupportMapFragment"
-            android:layout_width="match_parent"
-            android:layout_height="200dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"/>
-
-        <ImageView
-            android:id="@+id/ivNavParkedCar"
-            android:layout_width="150dp"
-            android:layout_height="150dp"
-            android:layout_marginTop="16dp"
-            android:scaleType="centerCrop"
-            android:visibility="gone"/>
-
-        <Button
-            android:id="@+id/btnOpenGoogleMaps"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:text="🗺️ OTWÓRZ W GOOGLE MAPS"
-            android:layout_marginTop="24dp"/>
-
-        <!-- Przeniesiony przycisk udostępniania -->
-        <Button
-            android:id="@+id/btnShareLocation"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:text="📤 UDOSTĘPNIJ POZYCJĘ"
-            android:layout_marginTop="12dp"/>
-
-        <Button
-            android:id="@+id/btnBackFromNavigate"
-            android:layout_width="match_parent"
-            android:layout_height="50dp"
-            android:text="ZAKOŃCZ I WRÓĆ DO MENU"
-            android:layout_marginTop="12dp"/>
-    </LinearLayout>
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentTop="true"
+            android:layout_marginEnd="24dp"
+            android:layout_marginTop="24dp"
+            android:src="@android:drawable/ic_menu_share"
+            app:tint="@android:color/white"
+            android:contentDescription="Udostępnij lokalizację"/>
+    </RelativeLayout>
 
     <!-- EKRAN 4: NAKŁADKA PEŁNOEKRANOWA ZDJĘCIA -->
     <FrameLayout

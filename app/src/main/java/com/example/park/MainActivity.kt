@@ -64,6 +64,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
     private lateinit var layoutNavigate: View
     private lateinit var layoutFullscreen: View
     private lateinit var layoutHistory: View
+    private lateinit var cardNavParkedCar: View
 
     // Zmienne do RecyclerView
     private lateinit var rvHistory: RecyclerView
@@ -75,7 +76,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
     private lateinit var btnMenuNavigate: Button
     private lateinit var btnSetTicket: Button
     private lateinit var btnToggleTheme: Button
-    private lateinit var btnShareLocation: Button
+    private lateinit var fabShare: com.google.android.material.floatingactionbutton.FloatingActionButton
     private lateinit var btnBackFromSave: Button
     private lateinit var btnBackFromNavigate: Button
     private lateinit var btnClearHistory: Button
@@ -165,7 +166,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
         btnMenuNavigate = findViewById(R.id.btnMenuNavigate)
         btnSetTicket = findViewById(R.id.btnSetTicket)
         btnToggleTheme = findViewById(R.id.btnToggleTheme)
-        btnShareLocation = findViewById(R.id.btnShareLocation)
+        fabShare = findViewById(R.id.fabShare)
         btnBackFromSave = findViewById(R.id.btnBackFromSave)
         btnBackFromNavigate = findViewById(R.id.btnBackFromNavigate)
         btnClearHistory = findViewById(R.id.btnClearHistory)
@@ -181,6 +182,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
         tvNavNote = findViewById(R.id.tvNavNote)
         ivParkedCar = findViewById(R.id.ivParkedCar)
         ivNavParkedCar = findViewById(R.id.ivNavParkedCar)
+        cardNavParkedCar = findViewById(R.id.cardNavParkedCar)
         ivFullscreen = findViewById(R.id.ivFullscreen)
 
         val mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as SupportMapFragment
@@ -229,7 +231,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
             AppCompatDelegate.setDefaultNightMode(newMode)
         }
 
-        btnShareLocation.setOnClickListener {
+        fabShare.setOnClickListener {
             parkedLocation?.let { location ->
                 val mapsUrl = "https://maps.google.com/?q=${location.latitude},${location.longitude}"
                 val shareMessage = "Moje auto jest zaparkowane tutaj:\n$mapsUrl"
@@ -258,15 +260,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
                 return@setOnClickListener
             }
 
-            AlertDialog.Builder(this)
+            // Używamy MaterialAlertDialogBuilder
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle("Wyczyść historię")
                 .setMessage("Czy na pewno chcesz usunąć WSZYSTKIE zapisane parkowania? Tej operacji nie można cofnąć.")
                 .setPositiveButton("USUŃ WSZYSTKO") { _, _ ->
-                    // Wyczyszczenie listy w pamięci RAM i odświeżenie widoku
                     parkingList.clear()
                     parkingAdapter.notifyDataSetChanged()
-
-                    // Trwałe usunięcie z notatnika telefonu
                     sharedPref.edit().remove("parking_history").apply()
                     Toast.makeText(this, "Historia została wyczyszczona", Toast.LENGTH_SHORT).show()
                 }
@@ -396,11 +396,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
     }
 
     private fun pokazDialogUsuwania(position: Int) {
-        AlertDialog.Builder(this)
+        // Używamy MaterialAlertDialogBuilder zamiast AlertDialog.Builder
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle("Usuń wpis")
             .setMessage("Czy na pewno chcesz trwale usunąć to parkowanie z historii?")
             .setPositiveButton("USUŃ") { _, _ ->
-                // Usunięcie elementu z modelu danych i odświeżenie interfejsu
                 parkingList.removeAt(position)
                 parkingAdapter.notifyItemRemoved(position)
                 zapiszZaktualizowanaHistorie()
@@ -562,11 +562,25 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
     }
 
     private fun pokazEkran(widocznyEkran: View) {
-        layoutMenu.visibility = View.GONE
-        layoutSave.visibility = View.GONE
-        layoutNavigate.visibility = View.GONE
-        layoutHistory.visibility = View.GONE
-        widocznyEkran.visibility = View.VISIBLE
+        val ekrany = listOf(layoutMenu, layoutSave, layoutNavigate, layoutHistory)
+
+        for (ekran in ekrany) {
+            if (ekran == widocznyEkran) {
+                // Przygotuj widok jako przezroczysty, włącz go i płynnie rozjaśnij
+                ekran.alpha = 0f
+                ekran.visibility = View.VISIBLE
+                ekran.animate()
+                    .alpha(1f)
+                    .setDuration(250) // Czas trwania animacji w milisekundach
+                    .start()
+            } else {
+                // Jeśli ekran był widoczny, ukryj go
+                ekran.visibility = View.GONE
+            }
+        }
+
+        // Ekran pełnoekranowego zdjęcia obsługujemy osobno (bez animacji menu)
+        layoutFullscreen.visibility = View.GONE
     }
 
     private fun sprawdzUprawnieniaIPobierz() {
@@ -614,9 +628,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallbac
         if (currentPhotoFile != null && currentPhotoFile!!.exists()) {
             val navBitmap = wczytajZmniejszonyBitmap(currentPhotoFile!!.absolutePath, 400, 400)
             ivNavParkedCar.setImageBitmap(navBitmap)
-            ivNavParkedCar.visibility = View.VISIBLE
+            cardNavParkedCar.visibility = View.VISIBLE
         } else {
-            ivNavParkedCar.visibility = View.GONE
+            cardNavParkedCar.visibility = View.GONE
         }
 
         // 2. Aktualizacja wbudowanej mapy Google
