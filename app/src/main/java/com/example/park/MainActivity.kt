@@ -46,8 +46,14 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
 
-class MainActivity : AppCompatActivity(), SensorEventListener {
+class MainActivity : AppCompatActivity(), SensorEventListener, OnMapReadyCallback {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var sharedPref: SharedPreferences
@@ -89,6 +95,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var ivFullscreen: ImageView
 
     // Zmienne nawigacyjne
+    private var googleMap: GoogleMap? = null
     private var parkedLocation: Location? = null
     private var currentLocation: Location? = null
 
@@ -97,7 +104,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var photoUri: Uri? = null
     private var currentPhotoFile: File? = null
     private var currentNote: String? = null
-
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     private var magnetometer: Sensor? = null
@@ -176,6 +182,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         ivParkedCar = findViewById(R.id.ivParkedCar)
         ivNavParkedCar = findViewById(R.id.ivNavParkedCar)
         ivFullscreen = findViewById(R.id.ivFullscreen)
+
+        val mapFragment = supportFragmentManager.findFragmentById(R.id.mapFragment) as SupportMapFragment
+        mapFragment.getMapAsync(this)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -610,6 +619,18 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             ivNavParkedCar.visibility = View.GONE
         }
 
+        // 2. Aktualizacja wbudowanej mapy Google
+        googleMap?.let { map ->
+            map.clear() // Usuwamy stare znaczniki z poprzedniego auta
+            parkedLocation?.let { loc ->
+                val carPosition = LatLng(loc.latitude, loc.longitude)
+                // Dodajemy czerwoną pinezkę w miejscu auta
+                map.addMarker(MarkerOptions().position(carPosition).title("Twoje Auto"))
+                // Robimy płynny najazd kamery na to miejsce
+                map.animateCamera(CameraUpdateFactory.newLatLngZoom(carPosition, 18f))
+            }
+        }
+
         if (!currentNote.isNullOrEmpty()) {
             tvNavNote.text = "Notatka: $currentNote"
             tvNavNote.visibility = View.VISIBLE
@@ -656,6 +677,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onPause() {
         super.onPause()
         sensorManager.unregisterListener(this)
+    }
+
+    override fun onMapReady(map: GoogleMap) {
+        googleMap = map
+
+        // Jeśli mamy już uprawnienia do GPS, pokazujemy na mapie niebieską kropkę z Twoją pozycją
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            googleMap?.isMyLocationEnabled = true
+        }
     }
 }
 

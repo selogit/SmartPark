@@ -32,6 +32,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Park">
+        <!-- Klucz API dla Google Maps -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDuVLZzSWofwJOec7y-G5Vl20tiDJgndJ8" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
