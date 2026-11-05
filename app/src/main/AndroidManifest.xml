@@ -35,7 +35,7 @@
         <!-- Klucz API dla Google Maps -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyDuVLZzSWofwJOec7y-G5Vl20tiDJgndJ8" />
+            android:value="${MAPS_API_KEY}" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
